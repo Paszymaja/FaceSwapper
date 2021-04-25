@@ -11,19 +11,40 @@ def extract_index_nparray(nparray):
     return index
 
 
-img = cv2.imread('TestPhotos/Korwin.png')
-img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-mask = np.zeros_like(img_gray)
+class Image:
+    def __init__(self, image_path=None):
 
-work_mode = 0
-if work_mode == 1:
-    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-else:
-    img2 = cv2.imread('Mua.jpg')
-    img2_gray = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
-    img2_new_face = np.zeros_like(img2)
-    height, width, channels = img2.shape
-    img2_new_face = np.zeros((height, width, channels), np.uint8)
+        if image_path is None:
+            self.video_read()
+        else:
+            self.image_path = image_path
+            self.image = self.image_read()
+
+        self.image_gray = self.image_gray()
+        self.image_mask = self.image_mask()
+
+    def image_read(self):
+        return cv2.imread(self.image_path)
+
+    def video_read(self):
+        camera = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        _, self.image = camera.read()
+
+        self.image_gray = self.image_gray()
+        self.image_mask = self.image_mask()
+
+    def image_gray(self):
+        return cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
+
+    def image_mask(self):
+        return np.zeros_like(self.image_gray)
+
+
+face_1 = Image('TestPhotos/Korwin.png')
+face_2 = Image('TestPhotos/Maklowicz.jpg')
+img2_new_face = np.zeros_like(face_2.image)
+height, width, channels = face_2.image.shape
+img2_new_face = np.zeros((height, width, channels), np.uint8)
 
 detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor('models/shape_predictor_68_face_landmarks.dat')
@@ -31,9 +52,9 @@ predictor = dlib.shape_predictor('models/shape_predictor_68_face_landmarks.dat')
 indexes_triangles = []
 
 # Face 1
-faces = detector(img_gray)
+faces = detector(face_1.image_gray)
 for face in faces:
-    landmarks = predictor(img_gray, face)
+    landmarks = predictor(face_1.image_gray, face)
     landmarks_points = []
     for n in range(0, 68):
         x = landmarks.part(n).x
@@ -43,9 +64,9 @@ for face in faces:
     points = np.array(landmarks_points, np.int32)
     convexhull = cv2.convexHull(points)
     # cv2.polylines(img, [convexhull], True, (255, 0, 0), 3)
-    cv2.fillConvexPoly(mask, convexhull, 255)
+    cv2.fillConvexPoly(face_1.image_mask, convexhull, 255)
 
-    face_image_1 = cv2.bitwise_and(img, img, mask=mask)
+    face_image_1 = cv2.bitwise_and(face_1.image, face_1.image, mask=face_1.image_mask)
 
     # Delaunay tringulation
     rect = cv2.boundingRect(convexhull)
@@ -71,16 +92,11 @@ for face in faces:
         if index_pt1 is not None and index_pt2 is not None and index_pt3 is not None:
             triangle = [index_pt1, index_pt2, index_pt3]
             indexes_triangels.append(triangle)
-while True:
-    # Face 2
-    if work_mode == 1:
-        _, img2 = cap.read()
-        img2_gray = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
-        img2_new_face = np.zeros_like(img2)
 
-    faces2 = detector(img2_gray)
+while True:
+    faces2 = detector(face_2.image_gray)
     for face in faces2:
-        landmarks = predictor(img2_gray, face)
+        landmarks = predictor(face_2.image_gray, face)
         landmarks_points2 = []
         for n in range(0, 68):
             x = landmarks.part(n).x
@@ -90,8 +106,8 @@ while True:
             points2 = np.array(landmarks_points2, np.int32)
             convexhull2 = cv2.convexHull(points2)
 
-    lines_space_mask = np.zeros_like(img_gray)
-    lines_space_new_face = np.zeros_like(img2)
+    lines_space_mask = np.zeros_like(face_1.image_gray)
+    lines_space_new_face = np.zeros_like(face_2.image)
 
     # Triangulation of faces
     for triangle_index in indexes_triangels:
@@ -103,7 +119,7 @@ while True:
 
         rect1 = cv2.boundingRect(triangle1)
         (x, y, w, h) = rect1
-        cropped_tr1 = img[y: y + h, x: x + w]
+        cropped_tr1 = face_1.image[y: y + h, x: x + w]
         cropped_tr1_mask = np.zeros((h, w), np.uint8)
 
         points = np.array([[tr1_pt1[0] - x, tr1_pt1[1] - y],
@@ -112,11 +128,12 @@ while True:
 
         cv2.fillConvexPoly(cropped_tr1_mask, points, 255)
 
+        work_mode = 0
         if work_mode == 0:
             cv2.line(lines_space_mask, tr1_pt1, tr1_pt2, 255)
             cv2.line(lines_space_mask, tr1_pt2, tr1_pt3, 255)
             cv2.line(lines_space_mask, tr1_pt1, tr1_pt3, 255)
-            lines_space = cv2.bitwise_and(img, img, mask=lines_space_mask)
+            lines_space = cv2.bitwise_and(face_1.image, face_1.image, mask=lines_space_mask)
 
         # Triangulation of the second face
         tr2_pt1 = landmarks_points2[triangle_index[0]]
@@ -151,18 +168,18 @@ while True:
         img2_new_face[y: y + h, x: x + w] = img2_new_face_rect_area
 
     # Put on new face
-    img2_face_mask = np.zeros_like(img2_gray)
+    img2_face_mask = np.zeros_like(face_2.image_gray)
     img2_head_mask = cv2.fillConvexPoly(img2_face_mask, convexhull2, 255)
     img2_face_mask = cv2.bitwise_not(img2_head_mask)
 
-    img2_head_noface = cv2.bitwise_and(img2, img2, mask=img2_face_mask)
+    img2_head_noface = cv2.bitwise_and(face_2.image, face_2.image, mask=img2_face_mask)
     result = cv2.add(img2_head_noface, img2_new_face)
 
     # Smoothing transition of images
     (x, y, w, h) = cv2.boundingRect(convexhull2)
     center_face2 = (int((x + x + w) / 2), int((y + y + h) / 2))
 
-    final_face = cv2.seamlessClone(result, img2, img2_head_mask, center_face2, cv2.NORMAL_CLONE)
+    final_face = cv2.seamlessClone(result, face_2.image, img2_head_mask, center_face2, cv2.NORMAL_CLONE)
 
     if work_mode == 1:
         cv2.imshow("result", result)
@@ -172,5 +189,4 @@ while True:
     key = cv2.waitKey(33)
     if key == 27:
         break
-cap.release()
 cv2.destroyAllWindows()
